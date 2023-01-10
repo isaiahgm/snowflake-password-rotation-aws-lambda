@@ -88,7 +88,7 @@ def create_secret(service_client, arn, token):
 
     """
     # Make sure the current secret exists
-    service_client.get_secret_value(SecretId=arn, VersionStage="AWSCURRENT")
+    current_secret = service_client.get_secret_value(SecretId=arn, VersionStage="AWSCURRENT")
 
     # Now try to get the secret version, if that fails, put a new secret
     try:
@@ -100,8 +100,12 @@ def create_secret(service_client, arn, token):
         # Generate a random password
         passwd = service_client.get_random_password(ExcludeCharacters=exclude_characters)
 
+        current_secret_str = json.loads(current_secret['SecretString'])
+        username = current_secret_str['username']
+
+        secret_str = json.dumps({"username": username, "password": passwd['RandomPassword']})
         # Put the secret
-        service_client.put_secret_value(SecretId=arn, ClientRequestToken=token, SecretString=passwd['RandomPassword'],
+        service_client.put_secret_value(SecretId=arn, ClientRequestToken=token, SecretString=secret_str,
                                         VersionStages=['AWSPENDING'])
         logger.info("createSecret: Successfully put secret for ARN %s and version %s." % (arn, token))
 
