@@ -8,7 +8,7 @@ services:
       args:
         pypi_index: ${PYPI_INDEX}
     # Run the pipeline file
-    command: python pipeline.py
+    command: python rotator.py
     volumes:
       # For passing AWS credentials into the container
       # Make sure to change destination homedir if you're using a different base image

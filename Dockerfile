@@ -10,23 +10,13 @@ RUN useradd -r -m -U pipeuser
 # Argument to enable installing PBLabs/BI Python packages
 ARG pypi_index
 
-# target bucket for data quality files, when needed
-ENV GREAT_EXPECTATIONS_S3_BUCKET=greatexpectations-dev.pitchbookbi.com
 # SET LOCAL as the environment, this will change via Airflow environment variable injection
 ENV ORCHESTRATOR_ENV=local
 
-# OPTIONAL: create a directory for airflow to identify xcoms (you can pass small chunks of data this way. DO NOT PASS DATASETS!! Pointers are fine.)
-# learn more here: https://airflow.apache.org/docs/apache-airflow-providers-cncf-kubernetes/stable/operators.html#how-does-xcom-work
-# RUN mkdir -p /airflow/xcom/
-
-WORKDIR /core/pipeline
-
-# build-essential may be necessary for certain packages which require compilation
-# RUN apt-get update && \
-# 	apt-get install -y --no-install-recommends build-essential
+WORKDIR /core
 
 # Copy requirements first so that we don't have to reinstall dependencies for every code change
-COPY --chown=pipeuser:pipeuser requirements.txt /core/pipeline
+COPY --chown=pipeuser:pipeuser requirements.txt /core
 
 # Python package installs
 RUN pip install --no-cache-dir --extra-index-url ${pypi_index} -r requirements.txt && \
