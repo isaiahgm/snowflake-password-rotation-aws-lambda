@@ -1,29 +1,54 @@
-# Base image to use (swap out if you need to use another Python version (e.g. 2.7, 3.6, 3.9, etc.)
-FROM python:3.8-slim
-
-LABEL maintainer="Isaiah Morgan isaiah.morgan@pitchbook.com" \
-      version="1.0.0"
-
-# create the pipe user
-RUN useradd -r -m -U pipeuser
-
-# Argument to enable installing PBLabs/BI Python packages
+# Define global args
+ARG FUNCTION_DIR="/home/app/"
+ARG RUNTIME_VERSION="3.8"
+ARG DISTRO_VERSION="3.12"
 ARG pypi_index
 
-# SET LOCAL as the environment, this will change via Airflow environment variable injection
-ENV ORCHESTRATOR_ENV=local
+# Stage 1 - bundle base image + runtime
+# Grab a fresh copy of the image and install GCC
+FROM python:${RUNTIME_VERSION}-alpine${DISTRO_VERSION} AS python-alpine
+# Install GCC (Alpine uses musl but we compile and link dependencies with GCC)
+RUN apk add --no-cache \
+    libstdc++
 
-WORKDIR /core
+# Stage 2 - build function and dependencies
+FROM python-alpine AS build-image
+# Install aws-lambda-cpp build dependencies
+RUN apk add --no-cache \
+    build-base \
+    libtool \
+    autoconf \
+    automake \
+    libexecinfo-dev \
+    make \
+    cmake \
+    libcurl
+# Include global args in this stage of the build
+ARG FUNCTION_DIR
+ARG RUNTIME_VERSION
+ARG pypi_index
+# Create function directory
+RUN mkdir -p ${FUNCTION_DIR}
+# Copy handler function
+COPY core/* ${FUNCTION_DIR}
+COPY requirements.txt /
+# Optional – Install the function's dependencies
+RUN python${RUNTIME_VERSION} -m pip install -r requirements.txt --target ${FUNCTION_DIR} --extra-index-url ${pypi_index}
+# Install Lambda Runtime Interface Client for Python
+RUN python${RUNTIME_VERSION} -m pip install awslambdaric --target ${FUNCTION_DIR}
 
-# Copy requirements first so that we don't have to reinstall dependencies for every code change
-COPY --chown=pipeuser:pipeuser requirements.txt /core
-
-# Python package installs
-RUN pip install --no-cache-dir --extra-index-url ${pypi_index} -r requirements.txt && \
-    rm requirements.txt
-
-# Copy all code into container, currently exclude notebook in .dockerignore
-COPY --chown=pipeuser:pipeuser core/ /core/
-
-# change to the pipe user
-USER pipeuser
+# Stage 3 - final runtime image
+# Grab a fresh copy of the Python image
+FROM python-alpine
+# Include global arg in this stage of the build
+ARG FUNCTION_DIR
+# Set working directory to function root directory
+WORKDIR ${FUNCTION_DIR}
+# Copy in the built dependencies
+COPY --from=build-image ${FUNCTION_DIR} ${FUNCTION_DIR}
+# (Optional) Add Lambda Runtime Interface Emulator and use a script in the ENTRYPOINT for simpler local runs
+ADD https://github.com/aws/aws-lambda-runtime-interface-emulator/releases/latest/download/aws-lambda-rie /usr/bin/aws-lambda-rie
+COPY entry.sh /
+RUN chmod 755 /usr/bin/aws-lambda-rie /entry.sh
+ENTRYPOINT [ "/entry.sh" ]
+CMD [ "app.handler" ]
