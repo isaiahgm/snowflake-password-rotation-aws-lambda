@@ -1,0 +1,23 @@
+# IDE
+.vscode
+.idea/
+
+# Cache
+*__pycache__/
+.cache/
+*.pyc
+.DS_Store
+
+# Test files
+.coverage
+.pytest_cache/
+htmlcov/
+src/tests/load/*.csv
+
+# Virtualenv
+local/
+venv/
+.env
+
+# Credentials
+core/creds/

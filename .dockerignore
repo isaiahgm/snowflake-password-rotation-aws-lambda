@@ -1,0 +1,27 @@
+# IDE
+.vscode
+.idea/
+
+# Cache
+*__pycache__/
+.cache/
+*.pyc
+.DS_Store
+
+# Test files
+src/tests/
+.coverage
+.pytest_cache/
+htmlcov/
+
+# Virtualenv
+local/
+venv/
+.env
+
+# core/ ignored files and directories
+core/notebook/*
+core/creds/*
+
+# notebooks
+**/*.ipynb
