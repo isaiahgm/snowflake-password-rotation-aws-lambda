@@ -157,9 +157,10 @@ def test_secret(service_client, arn, token):
     """
     # Make sure the current secret exists
     secret = service_client.get_secret_value(SecretId=arn, VersionId=token, VersionStage="AWSPENDING")
+    secret_str = json.loads(secret['SecretString'])
 
-    username = secret['SecretString']['username']
-    password = secret['SecretString']['password']
+    username = secret_str['username']
+    password = secret_str['password']
 
     snow_con = bi_snowflake_connector.connect(username=username, password=password)
     snow_con.close()
