@@ -10,7 +10,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
-def lambda_handler(event, context):
+def handler(event, context):
     """Secrets Manager Rotation Template
 
     This is a template for creating an AWS Secrets Manager rotation lambda
