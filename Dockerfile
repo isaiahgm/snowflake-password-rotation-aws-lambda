@@ -9,4 +9,4 @@ RUN  pip3 install --no-cache-dir --extra-index-url ${pypi_index} -r requirements
 
 COPY src ${LAMBDA_TASK_ROOT}
 
-CMD "app.handler"
+CMD [ "app.handler" ]
