@@ -1,54 +1,12 @@
-# Define global args
-ARG FUNCTION_DIR="/home/app/"
-ARG RUNTIME_VERSION="3.8"
-ARG DISTRO_VERSION="3.12"
+FROM public.ecr.aws/lambda/python:3.8
+
 ARG pypi_index
 
-# Stage 1 - bundle base image + runtime
-# Grab a fresh copy of the image and install GCC
-FROM python:${RUNTIME_VERSION}-alpine${DISTRO_VERSION} AS python-alpine
-# Install GCC (Alpine uses musl but we compile and link dependencies with GCC)
-RUN apk add --no-cache \
-    libstdc++
+COPY requirements.txt .
 
-# Stage 2 - build function and dependencies
-FROM python-alpine AS build-image
-# Install aws-lambda-cpp build dependencies
-RUN apk add --no-cache \
-    build-base \
-    libtool \
-    autoconf \
-    automake \
-    libexecinfo-dev \
-    make \
-    cmake \
-    libcurl
-# Include global args in this stage of the build
-ARG FUNCTION_DIR
-ARG RUNTIME_VERSION
-ARG pypi_index
-# Create function directory
-RUN mkdir -p ${FUNCTION_DIR}
-# Copy handler function
-COPY core/* ${FUNCTION_DIR}
-COPY requirements.txt /
-# Optional – Install the function's dependencies
-RUN python${RUNTIME_VERSION} -m pip install -r requirements.txt --target ${FUNCTION_DIR} --extra-index-url ${pypi_index}
-# Install Lambda Runtime Interface Client for Python
-RUN python${RUNTIME_VERSION} -m pip install awslambdaric --target ${FUNCTION_DIR}
+RUN  pip3 install --no-cache-dir --extra-index-url ${pypi_index} -r requirements.txt --target "${LAMBDA_TASK_ROOT}" && \
+    rm requirements.txt
 
-# Stage 3 - final runtime image
-# Grab a fresh copy of the Python image
-FROM python-alpine
-# Include global arg in this stage of the build
-ARG FUNCTION_DIR
-# Set working directory to function root directory
-WORKDIR ${FUNCTION_DIR}
-# Copy in the built dependencies
-COPY --from=build-image ${FUNCTION_DIR} ${FUNCTION_DIR}
-# (Optional) Add Lambda Runtime Interface Emulator and use a script in the ENTRYPOINT for simpler local runs
-ADD https://github.com/aws/aws-lambda-runtime-interface-emulator/releases/latest/download/aws-lambda-rie /usr/bin/aws-lambda-rie
-COPY entry.sh /
-RUN chmod 755 /usr/bin/aws-lambda-rie /entry.sh
-ENTRYPOINT [ "/entry.sh" ]
-CMD [ "app.handler" ]
+COPY src ${LAMBDA_TASK_ROOT}
+
+CMD "app.handler"

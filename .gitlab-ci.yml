@@ -1,0 +1,24 @@
+include:
+- project: ${DOCKER_CICD_REPO}
+  file: test-and-push.yml
+
+variables:
+  IMAGE_NAME: snowflake-password-rotator
+  FUNCTION_NAME: snowflake-password-rotator
+
+stages:
+- test
+- push
+- deploy
+
+deploy:
+  image: ${AWS_BUILDENV}
+  stage: deploy
+  tags:
+  - k8s
+  variables:
+    KUBERNETES_MEMORY_REQUEST: 128Mi
+  script:
+  - aws lambda update-function-code --function-name ${FUNCTION_NAME} --image-uri ${ECR_URL}/${IMAGE_NAME}:${CI_COMMIT_TAG} --publish
+  only:
+  - tags
