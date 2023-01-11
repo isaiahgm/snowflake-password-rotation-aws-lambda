@@ -3,8 +3,8 @@ include:
   file: test-and-push.yml
 
 variables:
-  IMAGE_NAME: snowflake-password-rotator
-  FUNCTION_NAME: snowflake-password-rotator
+  IMAGE_NAME: lambda/snowflake_password_rotator
+  FUNCTION_NAME: pb-snowflake-password-rotator
 
 stages:
 - test
