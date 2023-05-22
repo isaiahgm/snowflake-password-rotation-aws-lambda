@@ -204,16 +204,21 @@ def finish_secret(service_client, arn, token):
 
     metadata = service_client.describe_secret(SecretId=arn)
     current_version = None
+    pending_versions = []
     for version in metadata["VersionIdsToStages"]:
         if "AWSCURRENT" in metadata["VersionIdsToStages"][version]:
-            if version == token:
-                # The correct version is already marked as current, return
-                logger.info("finishSecret: Version %s already marked as AWSCURRENT for %s" % (version, arn))
-                return
             current_version = version
-            break
+        if "AWSPENDING" in metadata["VersionIdsToStages"][version]:
+            pending_versions.append(version)
 
-    # Finalize by staging the secret version current
-    service_client.update_secret_version_stage(SecretId=arn, VersionStage="AWSCURRENT", MoveToVersionId=token,
-                                               RemoveFromVersionId=current_version)
-    logger.info("finishSecret: Successfully set AWSCURRENT stage to version %s for secret %s." % (token, arn))
+    if current_version == token:
+        logger.info("finishSecret: Version %s already marked as AWSCURRENT for %s" % (version, arn))
+    else:
+        logging.info(f'Set version {token} as AWSCURRENT...')
+        service_client.update_secret_version_stage(SecretId=arn, VersionStage="AWSCURRENT", MoveToVersionId=token,
+                                                   RemoveFromVersionId=current_version)
+        logger.info("finishSecret: Successfully set AWSCURRENT stage to version %s for secret %s." % (token, arn))
+
+    for version in pending_versions:
+        logging.info(f'Cleanup: Remove AWSPENDING tag from {version}...')
+        service_client.update_secret_version_stage(SecretId=arn, VersionStage="AWSPENDING", RemoveFromVersionId=token)
