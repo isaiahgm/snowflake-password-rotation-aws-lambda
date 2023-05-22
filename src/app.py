@@ -5,10 +5,12 @@ import json
 import boto3
 
 import bi_snowflake_connector
+from snowflake.connector.errors import ProgrammingError
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-
+logging.getLogger('snowflake').setLevel(logging.WARNING)
+logging.getLogger('boto3').setLevel(logging.WARNING)
 
 def handler(event, context):
     """Secrets Manager Rotation Template
@@ -34,8 +36,10 @@ def handler(event, context):
     arn = event['SecretId']
     token = event['ClientRequestToken']
     step = event['Step']
+    logging.info(f'Begin password rotation step {step} for {arn} with token {token}...')
 
     # Setup the client
+    logging.info(f'Connect to secretsmanager...')
     service_client = boto3.client('secretsmanager')
 
     # Make sure the version is staged correctly
@@ -87,24 +91,25 @@ def create_secret(service_client, arn, token):
         ResourceNotFoundException: If the secret with the specified arn and stage does not exist
 
     """
-    # Make sure the current secret exists
+    logging.info('createSecret: Started...')
+    logging.info(f'Get AWSCURRENT secret value of {arn}...')
     current_secret = service_client.get_secret_value(SecretId=arn, VersionStage="AWSCURRENT")
 
-    # Now try to get the secret version, if that fails, put a new secret
     try:
         service_client.get_secret_value(SecretId=arn, VersionId=token, VersionStage="AWSPENDING")
+        logging.warning('AWSPENDING version already exists, skip generating a new secret...')
         logger.info("createSecret: Successfully retrieved secret for %s." % arn)
     except service_client.exceptions.ResourceNotFoundException:
-        # Get exclude characters from environment variable
-        exclude_characters = os.environ['EXCLUDE_CHARACTERS'] if 'EXCLUDE_CHARACTERS' in os.environ else '/@"\'\\'
-        # Generate a random password
+        logging.info('Generate new secret...')
+        exclude_characters = os.environ['EXCLUDE_CHARACTERS'] if 'EXCLUDE_CHARACTERS' in os.environ else '/@"\'\\`'
         passwd = service_client.get_random_password(ExcludeCharacters=exclude_characters)
 
         current_secret_str = json.loads(current_secret['SecretString'])
         username = current_secret_str['username']
 
         secret_str = json.dumps({"username": username, "password": passwd['RandomPassword']})
-        # Put the secret
+
+        logging.info('Put new secret as AWSPENDING...')
         service_client.put_secret_value(SecretId=arn, ClientRequestToken=token, SecretString=secret_str,
                                         VersionStages=['AWSPENDING'])
         logger.info("createSecret: Successfully put secret for ARN %s and version %s." % (arn, token))
@@ -125,17 +130,25 @@ def set_secret(service_client, arn, token):
         token (string): The ClientRequestToken associated with the secret version
 
     """
-    # Make sure the current secret exists
+    logging.info('setSecret: Started...')
+    logging.info(f'Get AWSPENDING version of secret {arn}...')
     secret = service_client.get_secret_value(SecretId=arn, VersionId=token, VersionStage="AWSPENDING")
     secret_str = json.loads(secret['SecretString'])
 
     username = secret_str['username']
     password = secret_str['password']
 
-    with bi_snowflake_connector.connect() as snow_con:
-        with snow_con.cursor() as cursor:
-            cursor.execute("USE ROLE SECURITYADMIN;")
-            cursor.execute(f"ALTER USER {username} SET PASSWORD='{password}';")
+    try:
+        with bi_snowflake_connector.connect() as snow_con:
+            with snow_con.cursor() as cursor:
+                logging.info(f'Set new password for {username}...')
+                cursor.execute("USE ROLE SECURITYADMIN;")
+                cursor.execute(f"ALTER USER {username} SET PASSWORD='{password}';")
+    except ProgrammingError as e:
+        if e.errno == 3002:
+            logging.warning(f'PRIOR USE error detected, continuing without setting password...')
+        else:
+            raise e
 
     logger.info(f"setSecret: Successfully set secret for {arn} and version {token} in Snowflake.")
 
@@ -155,13 +168,15 @@ def test_secret(service_client, arn, token):
         token (string): The ClientRequestToken associated with the secret version
 
     """
-    # Make sure the current secret exists
+    logging.info('testSecret: Started...')
+    logging.info('Get AWSPENDING secret version...')
     secret = service_client.get_secret_value(SecretId=arn, VersionId=token, VersionStage="AWSPENDING")
     secret_str = json.loads(secret['SecretString'])
 
     username = secret_str['username']
     password = secret_str['password']
 
+    logging.info('Test connecting to Snowflake...')
     snow_con = bi_snowflake_connector.connect(username=username, password=password)
     snow_con.close()
 
@@ -185,6 +200,8 @@ def finish_secret(service_client, arn, token):
 
     """
     # First describe the secret to get the current version
+    logging.info('finishSecret: Started...')
+
     metadata = service_client.describe_secret(SecretId=arn)
     current_version = None
     for version in metadata["VersionIdsToStages"]:
