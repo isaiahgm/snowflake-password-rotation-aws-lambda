@@ -105,9 +105,10 @@ def create_secret(service_client, arn, token):
         passwd = service_client.get_random_password(ExcludeCharacters=exclude_characters)
 
         current_secret_str = json.loads(current_secret['SecretString'])
-        username = current_secret_str['username']
+        username = current_secret_str.pop('username')
+        current_secret_str.pop('password')
 
-        secret_str = json.dumps({"username": username, "password": passwd['RandomPassword']})
+        secret_str = json.dumps({"username": username, "password": passwd['RandomPassword'], **current_secret_str})
 
         logging.info('Put new secret as AWSPENDING...')
         service_client.put_secret_value(SecretId=arn, ClientRequestToken=token, SecretString=secret_str,
@@ -138,8 +139,14 @@ def set_secret(service_client, arn, token):
     username = secret_str['username']
     password = secret_str['password']
 
+    # Get Terraform Snowflake Connection Details
+    svc_arn = 'arn:aws:secretsmanager:us-west-2:542960883369:secret:terraform/snowflake/pitchbook/secrets'
+    svc_secret = service_client.get_secret_value(SecretId=svc_arn, VersionStage="AWSCURRENT")
+    svc_user = 'SVC_BOT_TERRAFORM'
+    svc_pwd = json.loads(svc_secret['SecretString'])['terraform_bot_password']
+
     try:
-        with bi_snowflake_connector.connect() as snow_con:
+        with bi_snowflake_connector.connect(username=svc_user, password=svc_pwd) as snow_con:
             with snow_con.cursor() as cursor:
                 logging.info(f'Set new password for {username}...')
                 cursor.execute("USE ROLE SECURITYADMIN;")
